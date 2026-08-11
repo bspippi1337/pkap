@@ -33,8 +33,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .build/android-source/part_* > /tmp/pkap-android.b64
-          base64 --decode /tmp/pkap-android.b64 > /tmp/pkap-android.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64
+          import io
+          import zipfile
+
+          paths = sorted(Path('.build/android-source').glob('part_*'))
+          parts = [p.read_bytes() for p in paths]
+
+          def decode_and_test(encoded):
+              try:
+                  data = base64.b64decode(encoded, validate=True)
+                  with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                      if zf.testzip() is not None:
+                          return None
+                      names = set(zf.namelist())
+                      if 'pkap-android/settings.gradle.kts' not in names:
+                          return None
+                      if 'pkap-android/app/build.gradle.kts' not in names:
+                          return None
+                  return data
+              except Exception:
+                  return None
+
+          combined = b''.join(parts)
+          result = decode_and_test(combined)
+
+          if result is None:
+              first = parts[0]
+              rest = b''.join(parts[1:])
+              for i in range(len(first)):
+                  result = decode_and_test(first[:i] + first[i + 1:] + rest)
+                  if result is not None:
+                      print(f'Repaired one corrupt source byte at part_00 offset {i}: {first[i:i+1]!r}')
+                      break
+
+          if result is None:
+              raise SystemExit('Could not reconstruct a valid Android source ZIP')
+
+          Path('/tmp/pkap-android.zip').write_bytes(result)
+          print(f'Validated source ZIP: {len(result)} bytes')
+          PY
           unzip -t /tmp/pkap-android.zip
           rm -rf buildsrc
           mkdir -p buildsrc
