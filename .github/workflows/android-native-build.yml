@@ -85,6 +85,22 @@ jobs:
           test -f buildsrc/pkap-android/settings.gradle.kts
           test -f buildsrc/pkap-android/app/build.gradle.kts
 
+      - name: Apply Android source fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('buildsrc/pkap-android/app/src/main/java/com/bspippi/pkap/util/LogWriter.kt')
+          s = p.read_text()
+          s = s.replace('private val logsDir: File by lazy {', 'private val logDirectory: File by lazy {')
+          s = s.replace('File(logsDir, "CredentialDump-Session.log")', 'File(logDirectory, "CredentialDump-Session.log")')
+          s = s.replace('File(logsDir, filename).appendText', 'File(logDirectory, filename).appendText')
+          s = s.replace('fun getLogsDir(): File = logsDir', 'fun getLogsDir(): File = logDirectory')
+          p.write_text(s)
+          print('Applied LogWriter JVM-signature fix')
+          PY
+
       - name: Ensure Android SDK 35
         shell: bash
         run: |
